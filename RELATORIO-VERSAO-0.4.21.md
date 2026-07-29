@@ -48,6 +48,12 @@ Havia dois fatores relevantes:
 - O total de paginas e atualizado antes da criacao das superficies visuais.
 - A associacao de `.pdf` usa um inicializador que define corretamente o
   diretorio de trabalho do aplicativo.
+- Em computadores onde o launcher do `jpackage` apresenta o erro 1400, o
+  inicializador nativo `packaging/DelvindPdfNativeLauncher.cs` chama o
+  `javaw.exe` diretamente e repassa o caminho completo do PDF.
+- O script `packaging/Ensure-DelvindPdf.ps1` verifica o inicializador no login,
+  restaura a copia corrigida quando necessario e reaplica a associacao de
+  `.pdf` para o usuario atual.
 - O monitor de downloads tambem e iniciado a partir do diretorio do
   executavel.
 - Os scripts de compilacao usam o repositorio Maven local do projeto, quando
@@ -83,6 +89,17 @@ Para gerar o instalador MSI:
 
 ```powershell
 .\release-windows-installer.ps1
+```
+
+Para compilar o inicializador nativo no Windows com o compilador do .NET
+Framework:
+
+```powershell
+& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" `
+  /nologo /target:winexe /optimize+ `
+  /win32icon:packaging\app-icon.ico `
+  /out:target\DelvindPdfNativeLauncher.exe `
+  packaging\DelvindPdfNativeLauncher.cs
 ```
 
 Os diretorios `target`, `dist-installer`, `jpackage-temp`, `package-input`,
