@@ -49,10 +49,16 @@ Ou usando o JDK/Maven locais:
 .\build.ps1
 ```
 
-Depois, para criar instalador Windows, use `jpackage` sobre o JAR gerado. Exemplo base:
+Para criar o instalador Windows estavel da versao 1.0.4, execute:
 
 ```powershell
-jpackage --type exe --name "Delvind PDF" --vendor "DOUGLAS" --app-version 0.3.1 --input target --main-jar delvind-pdf-0.3.1.jar --main-class br.com.pdfleitor.app.DelfosPdfLauncher --win-menu --win-shortcut --file-associations packaging/pdf-association.properties
+.\release-windows-stable.ps1
+```
+
+Para criar um pacote manualmente, use `jpackage` sobre o JAR gerado. Exemplo base:
+
+```powershell
+jpackage --type exe --name "Delvind PDF" --vendor "DOUGLAS" --app-version 1.0.4 --input target --main-jar delvind-pdf-1.0.4.jar --main-class br.com.pdfleitor.app.DelfosPdfLauncher --win-menu --win-shortcut --file-associations packaging/pdf-association.properties
 ```
 
 ## AssociaÃ§Ã£o com PDF

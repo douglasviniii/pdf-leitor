@@ -3,15 +3,14 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $env:JAVA_HOME = Join-Path $root "tools\jdk-21.0.11+10"
 $mavenBin = Join-Path $root "tools\apache-maven-3.9.16\bin"
-$mavenRepo = Join-Path $root ".m2-repository"
 $wixRoot = Join-Path $root "tools\wix-3.14.1"
 $wixTools = Join-Path $wixRoot "tools"
 $dist = Join-Path $root "dist-installer"
 $temp = Join-Path $root "jpackage-temp"
 $inputDir = Join-Path $root "package-input"
 $appName = "Delvind PDF"
-$appVersion = "0.4.21"
-$jar = "delvind-pdf-0.4.21.jar"
+$appVersion = "1.0.4"
+$jar = "delvind-pdf-1.0.4.jar"
 $iconPng = Join-Path $root "src\main\resources\icons\app-icon.png"
 $iconIco = Join-Path $root "packaging\app-icon.ico"
 
@@ -67,7 +66,7 @@ if (Test-Path $inputDir) {
     Remove-Item -LiteralPath $inputDir -Recurse -Force
 }
 
-mvn "-Dmaven.repo.local=$mavenRepo" clean package
+mvn clean package
 if ($LASTEXITCODE -ne 0) {
     throw "Falha ao compilar o JAR do Delvind PDF."
 }
@@ -88,8 +87,10 @@ Copy-Item -LiteralPath (Join-Path $root "target\$jar") -Destination (Join-Path $
     --main-class "br.com.pdfleitor.app.DelfosPdfLauncher" `
     --icon $iconIco `
     --file-associations (Join-Path $root "packaging\pdf-association.properties") `
+    --win-per-user-install `
     --win-menu `
     --win-shortcut `
+    --win-console `
     --win-dir-chooser `
     --java-options "-Dfile.encoding=UTF-8"
 

@@ -13,9 +13,7 @@ public final class DelfosPdfLauncher {
             AppLog.mark("launcher-entered");
             AppLog.write("launcher args=" + AppLog.args(args));
             if (Arrays.asList(args).contains("--watch-downloads")) {
-                AppLog.write("launcher entering download watcher mode");
-                new BackgroundDownloadWatcher().run();
-                AppLog.write("launcher leaving download watcher mode");
+                AppLog.write("legacy download watcher request ignored");
                 exitAuxiliaryProcess();
             }
             AppLog.write("launcher starting JavaFX app");

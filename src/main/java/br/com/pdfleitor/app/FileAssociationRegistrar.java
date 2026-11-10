@@ -4,11 +4,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 final class FileAssociationRegistrar {
     private static final String APP_NAME = "Delvind PDF";
@@ -22,13 +19,12 @@ final class FileAssociationRegistrar {
         if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("windows")) {
             return;
         }
-        Optional<String> command = ProcessHandle.current().info().command();
-        if (command.isEmpty() || !command.get().endsWith(EXE_NAME)) {
+        Optional<String> command = resolveLauncherExecutable();
+        if (command.isEmpty()) {
             return;
         }
         String executable = command.get();
-        String launchTarget = ensureWorkingDirectoryLauncher(executable);
-        String openCommand = "\"" + launchTarget + "\" \"%1\"";
+        String openCommand = "\"" + executable + "\" \"%1\"";
         String icon = "\"" + executable + "\",0";
 
         regAdd("HKCU\\Software\\Classes\\Applications\\" + EXE_NAME, "ApplicationCompany", "REG_SZ", "Delvind");
@@ -51,34 +47,24 @@ final class FileAssociationRegistrar {
         regAdd("HKCU\\Software\\Classes\\DelvindPDF.Capabilities", "ApplicationDescription", "REG_SZ", "Leitor de PDF Delvind");
         regAdd("HKCU\\Software\\Classes\\DelvindPDF.Capabilities\\FileAssociations", ".pdf", "REG_SZ", PROG_ID);
         regAdd("HKCU\\Software\\Classes\\DelvindPDF.Capabilities\\URLAssociations", "ACROBAT", "REG_SZ", "ACROBAT");
-        registerBrowserPdfPolicies();
-        configureBrowserPdfPreferences();
-        registerBackgroundWatcher(executable);
-        registerDefaultCommandsWithPowerShell(launchTarget, executable);
+        removeLegacyBackgroundWatcher();
+        registerDefaultCommandsWithPowerShell(executable);
     }
 
-    private static String ensureWorkingDirectoryLauncher(String executable) {
-        String localAppData = System.getenv("LOCALAPPDATA");
-        if (localAppData == null || localAppData.isBlank()) {
-            return executable;
+    private static Optional<String> resolveLauncherExecutable() {
+        String configured = System.getProperty("delvind.launcher", "").trim();
+        if (!configured.isEmpty()) {
+            try {
+                Path path = Path.of(configured).toAbsolutePath().normalize();
+                if (Files.isRegularFile(path) && path.getFileName().toString().equalsIgnoreCase(EXE_NAME)) {
+                    return Optional.of(path.toString());
+                }
+            } catch (RuntimeException ignored) {
+                // Fall through to the process executable.
+            }
         }
-        Path executablePath = Path.of(executable);
-        Path launcher = Path.of(localAppData, "Delvind PDF Support", "Abrir Delvind PDF.cmd");
-        String script = """
-                @echo off
-                setlocal
-                pushd "%s"
-                start "" "%s" %%*
-                popd
-                """.formatted(executablePath.getParent(), executable);
-        try {
-            Files.createDirectories(launcher.getParent());
-            Files.writeString(launcher, script, StandardCharsets.UTF_8);
-            return launcher.toString();
-        } catch (IOException ex) {
-            AppLog.write("working directory launcher creation failed", ex);
-            return executable;
-        }
+        return ProcessHandle.current().info().command()
+                .filter(path -> path.toLowerCase(Locale.ROOT).endsWith(EXE_NAME.toLowerCase(Locale.ROOT)));
     }
 
     static boolean isCurrentUserPdfDefault() {
@@ -135,8 +121,8 @@ final class FileAssociationRegistrar {
         }
     }
 
-    private static void registerDefaultCommandsWithPowerShell(String launchTarget, String executable) {
-        String openCommand = "\"" + launchTarget + "\" \"%1\"";
+    private static void registerDefaultCommandsWithPowerShell(String executable) {
+        String openCommand = "\"" + executable + "\" \"%1\"";
         String icon = "\"" + executable + "\",0";
         String script = """
                 $ErrorActionPreference = 'SilentlyContinue'
@@ -177,139 +163,12 @@ final class FileAssociationRegistrar {
         }
     }
 
-    private static void registerBrowserPdfPolicies() {
-        regAdd("HKCU\\Software\\Policies\\Google\\Chrome", "AlwaysOpenPdfExternally", "REG_DWORD", "1");
-        regAdd("HKCU\\Software\\Policies\\Microsoft\\Edge", "AlwaysOpenPdfExternally", "REG_DWORD", "1");
-    }
-
-    private static void registerBackgroundWatcher(String executable) {
-        String command = "\"" + executable + "\" --watch-downloads";
-        regAdd("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", APP_NAME + " Download Watcher", "REG_SZ", command);
-        startBackgroundWatcher(executable);
-    }
-
-    private static void startBackgroundWatcher(String executable) {
-        try {
-            new ProcessBuilder(executable, "--watch-downloads")
-                    .directory(Path.of(executable).getParent().toFile())
-                    .start();
-            AppLog.write("background watcher start requested");
-        } catch (IOException ex) {
-            AppLog.write("background watcher start failed: " + ex.getMessage());
-        }
-    }
-
-    private static void configureBrowserPdfPreferences() {
-        String localAppData = System.getenv("LOCALAPPDATA");
-        if (localAppData == null || localAppData.isBlank()) {
-            return;
-        }
-        List<Path> browserRoots = List.of(
-                Path.of(localAppData, "Google", "Chrome", "User Data"),
-                Path.of(localAppData, "Microsoft", "Edge", "User Data")
-        );
-        for (Path browserRoot : browserRoots) {
-            updateBrowserProfiles(browserRoot);
-        }
-    }
-
-    private static void updateBrowserProfiles(Path browserRoot) {
-        if (!Files.isDirectory(browserRoot)) {
-            return;
-        }
-        try (var profiles = Files.list(browserRoot)) {
-            profiles.filter(Files::isDirectory)
-                    .map(profile -> profile.resolve("Preferences"))
-                    .filter(Files::isRegularFile)
-                    .forEach(FileAssociationRegistrar::updateBrowserPreferences);
-        } catch (IOException ex) {
-            // Browser preferences are best-effort. Chrome/Edge may be open and rewrite the file.
-        }
-    }
-
-    private static void updateBrowserPreferences(Path preferencesFile) {
-        try {
-            String json = Files.readString(preferencesFile, StandardCharsets.UTF_8);
-            String updated = enableExternalPdfPreference(json);
-            if (!json.equals(updated)) {
-                Path backup = preferencesFile.resolveSibling("Preferences.delvind-bak");
-                if (!Files.exists(backup)) {
-                    Files.copy(preferencesFile, backup, StandardCopyOption.COPY_ATTRIBUTES);
-                }
-                Files.writeString(preferencesFile, updated, StandardCharsets.UTF_8);
-            }
-        } catch (IOException ex) {
-            // Nothing else to do; users can still set this manually in the browser.
-        }
-    }
-
-    private static String enableExternalPdfPreference(String json) {
-        String updated = enableAlwaysOpenPdfExternally(json);
-        return enablePdfDownloadOpenExternally(updated);
-    }
-
-    private static String enableAlwaysOpenPdfExternally(String json) {
-        Pattern existing = Pattern.compile("\"always_open_pdf_externally\"\\s*:\\s*(true|false)");
-        var matcher = existing.matcher(json);
-        if (matcher.find()) {
-            return matcher.replaceAll("\"always_open_pdf_externally\":true");
-        }
-
-        String pluginsKey = "\"plugins\":{";
-        int pluginsIndex = json.indexOf(pluginsKey);
-        if (pluginsIndex >= 0) {
-            int insertAt = pluginsIndex + pluginsKey.length();
-            return json.substring(0, insertAt)
-                    + "\"always_open_pdf_externally\":true,"
-                    + json.substring(insertAt);
-        }
-
-        int objectEnd = json.lastIndexOf('}');
-        if (objectEnd <= 0) {
-            return json;
-        }
-        return json.substring(0, objectEnd)
-                + ",\"plugins\":{\"always_open_pdf_externally\":true}"
-                + json.substring(objectEnd);
-    }
-
-    private static String enablePdfDownloadOpenExternally(String json) {
-        Pattern existing = Pattern.compile("\"extensions_to_open\"\\s*:\\s*\"([^\"]*)\"");
-        var matcher = existing.matcher(json);
-        if (matcher.find()) {
-            String value = matcher.group(1);
-            if (hasPdfExtension(value)) {
-                return json;
-            }
-            String newValue = value.isBlank() ? "pdf" : value + ":pdf";
-            return matcher.replaceFirst("\"extensions_to_open\":\"" + newValue + "\"");
-        }
-
-        String downloadKey = "\"download\":{";
-        int downloadIndex = json.indexOf(downloadKey);
-        if (downloadIndex >= 0) {
-            int insertAt = downloadIndex + downloadKey.length();
-            return json.substring(0, insertAt)
-                    + "\"extensions_to_open\":\"pdf\","
-                    + json.substring(insertAt);
-        }
-
-        int objectEnd = json.lastIndexOf('}');
-        if (objectEnd <= 0) {
-            return json;
-        }
-        return json.substring(0, objectEnd)
-                + ",\"download\":{\"extensions_to_open\":\"pdf\"}"
-                + json.substring(objectEnd);
-    }
-
-    private static boolean hasPdfExtension(String extensions) {
-        for (String extension : extensions.split(":")) {
-            if ("pdf".equalsIgnoreCase(extension.trim())) {
-                return true;
-            }
-        }
-        return false;
+    private static void removeLegacyBackgroundWatcher() {
+        reg("delete",
+                "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "/v",
+                APP_NAME + " Download Watcher",
+                "/f");
     }
 
     private static void openWithDialog(Path pdfPath) {

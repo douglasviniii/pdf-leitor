@@ -311,8 +311,8 @@ public class MainWindow {
                 return;
             }
             tabPane.getSelectionModel().select(tab);
-            updatePageLabels();
             buildPagePlaceholders(session);
+            updatePageLabels();
             renderAllPages(session);
         });
         openTask.setOnFailed(event -> {
@@ -501,8 +501,7 @@ public class MainWindow {
             imageView.setPreserveRatio(true);
             imageView.setSmooth(true);
 
-            // Allocate the large drawing buffer only when this page is rendered.
-            Canvas canvas = new Canvas();
+            Canvas canvas = new Canvas(650, 850);
             StackPane stack = new StackPane(imageView, canvas);
             stack.getStyleClass().add("page-stack");
             stack.setMinSize(650, 850);
@@ -1644,17 +1643,22 @@ public class MainWindow {
                 return false;
             }
         }
+        shutdownResources();
+        return true;
+    }
+
+    public void shutdownResources() {
         renderExecutor.shutdownNow();
         ioExecutor.shutdownNow();
         for (Tab tab : tabPane.getTabs()) {
-            DocumentSession session = (DocumentSession) tab.getUserData();
-            try {
-                session.pdfService.close();
-            } catch (IOException ignored) {
-                // Closing the app should not block on a cleanup alert.
+            if (tab.getUserData() instanceof DocumentSession session) {
+                try {
+                    session.pdfService.close();
+                } catch (IOException ignored) {
+                    // Closing the app should not block on a cleanup alert.
+                }
             }
         }
-        return true;
     }
 
     private boolean confirmSaveOrDiscard(DocumentSession session) {

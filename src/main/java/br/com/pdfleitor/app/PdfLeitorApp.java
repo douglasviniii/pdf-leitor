@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.prefs.Preferences;
 
 public class PdfLeitorApp extends Application {
-    private static final String DEFAULT_PROMPT_VERSION = "0.4.21";
+    private static final String DEFAULT_PROMPT_VERSION = "1.0.4";
     private static final String DEFAULT_PROMPT_KEY = "default-pdf-prompt-version";
 
     private MainWindow mainWindow;
@@ -45,8 +45,7 @@ public class PdfLeitorApp extends Application {
         AppLog.mark("javafx-start-entered");
         AppLog.write("app start args=" + AppLog.args(rawArgs));
         if (SingleInstanceService.sendToRunningInstance(rawArgs)) {
-            AppLog.write("sent args to running instance after JavaFX startup");
-            AppLog.mark("sent-to-running-instance");
+            AppLog.write("running instance confirmed PDF tab open");
             Platform.exit();
             return;
         }
@@ -67,7 +66,7 @@ public class PdfLeitorApp extends Application {
         AppLog.mark("stage-shown");
         AppLog.write("primary stage shown");
 
-        AppLog.write("starting single instance listener");
+        AppLog.write("starting acknowledged single instance listener");
         SingleInstanceService.start(mainWindow);
         openStartupPdfsAsync(rawArgs);
         configureWindowsIntegrationAsync(Arrays.stream(rawArgs).findFirst());
@@ -77,6 +76,9 @@ public class PdfLeitorApp extends Application {
     public void stop() {
         AppLog.write("app stop");
         startupExecutor.shutdownNow();
+        if (mainWindow != null) {
+            mainWindow.shutdownResources();
+        }
     }
 
     static Optional<Path> argumentToPath(String rawArgument) {

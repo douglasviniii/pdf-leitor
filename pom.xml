@@ -5,7 +5,7 @@
 
     <groupId>br.com.pdfleitor</groupId>
     <artifactId>delvind-pdf</artifactId>
-    <version>0.4.21</version>
+    <version>1.0.4</version>
     <name>Delvind PDF</name>
     <organization>
         <name>DOUGLAS</name>
